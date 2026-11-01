@@ -1,6 +1,10 @@
 package org.example;
 
-public class Book {
+import java.io.Serializable;
+
+public class Book implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private static int nextId = 1;
 
@@ -28,6 +32,10 @@ public class Book {
     public void setWriterName(String writerName) { this.writerName = writerName; }
     public void setPrice(double price) { this.price = price; }
     public void setQuantity(int quantity) { this.quantity = quantity; }
+
+    public static void syncNextId(int maxId) {
+        if (maxId >= nextId) nextId = maxId + 1;
+    }
 
     @Override
     public String toString() {

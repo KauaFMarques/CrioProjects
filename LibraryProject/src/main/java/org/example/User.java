@@ -1,6 +1,10 @@
 package org.example;
 
-public class User {
+import java.io.Serializable;
+
+public class User implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private static int nextId = 1;
 
@@ -21,9 +25,12 @@ public class User {
     public void setPassword(String password) { this.password = password; }
     public void setRole(Role role) { this.role = role; }
 
+    public static void syncNextId(int maxId) {
+        if (maxId >= nextId) nextId = maxId + 1;
+    }
+
     @Override
     public String toString() {
         return "ID: " + userId + " | Role: " + role;
-        // ⚠️ NÃO imprimir senha em toString — boa prática
     }
 }

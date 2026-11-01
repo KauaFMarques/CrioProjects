@@ -56,22 +56,40 @@ public class Main {
         sc.close();
     }
 
+    // ---------- CARREGAR DADOS ----------
+    private static void carregarDados() {
+        books  = Persistence.loadBooks();
+        users  = Persistence.loadUsers();
+        issues = Persistence.loadIssues();
+
+        // Sincroniza contadores estáticos para evitar colisão de IDs
+        books.stream().mapToInt(Book::getBookId).max().ifPresent(Book::syncNextId);
+        users.stream().mapToInt(User::getUserId).max().ifPresent(User::syncNextId);
+
+        // Se primeira execução (sem usuários), cria seeds
+        if (users.isEmpty()) {
+            users.add(new User("admin123", Role.ADMIN));
+            users.add(new User("user123", Role.USER));
+            Persistence.saveUsers(users);
+            System.out.println("ℹ Seed inicial criado (admin=1, user=2).");
+        }
+    }
+
+
     // ---------- 1. ADICIONAR ----------
     private static void adicionarLivro() {
         System.out.print("Nome do livro: ");
         String nome = sc.nextLine();
-
         System.out.print("Autor: ");
         String autor = sc.nextLine();
-
         System.out.print("Preço: ");
         double preco = lerDouble();
-
         System.out.print("Quantidade: ");
         int qtd = lerInt();
 
         Book novo = new Book(nome, autor, preco, qtd);
         books.add(novo);
+        Persistence.saveBooks(books);   // 👈 persiste
 
         System.out.println("✔ Livro adicionado com ID " + novo.getBookId());
     }
@@ -91,15 +109,13 @@ public class Main {
     private static void deletarLivro() {
         System.out.print("ID do livro a deletar: ");
         int id = lerInt();
-
         Book alvo = buscarPorId(id);
-
         if (alvo == null) {
             System.out.println("⚠ Livro com ID " + id + " não encontrado.");
             return;
         }
-
         books.remove(alvo);
+        Persistence.saveBooks(books);   // 👈
         System.out.println("✔ Livro \"" + alvo.getBookName() + "\" removido.");
     }
 
@@ -107,29 +123,17 @@ public class Main {
     private static void reduzirQuantidade() {
         System.out.print("ID do livro: ");
         int id = lerInt();
-
         Book alvo = buscarPorId(id);
-        if (alvo == null) {
-            System.out.println("⚠ Livro com ID " + id + " não encontrado.");
-            return;
-        }
+        if (alvo == null) { System.out.println("⚠ não encontrado."); return; }
 
         System.out.print("Quantidade a subtrair: ");
         int qtd = lerInt();
-
-        if (qtd <= 0) {
-            System.out.println("⚠ A quantidade a subtrair deve ser positiva.");
-            return;
-        }
-        if (qtd > alvo.getQuantity()) {
-            System.out.println("⚠ Operação inválida: quantidade a subtrair (" + qtd +
-                    ") é maior que o estoque (" + alvo.getQuantity() + ").");
-            return;
-        }
+        if (qtd <= 0) { System.out.println("⚠ deve ser positiva."); return; }
+        if (qtd > alvo.getQuantity()) { System.out.println("⚠ estoque insuficiente."); return; }
 
         alvo.setQuantity(alvo.getQuantity() - qtd);
-        System.out.println("✔ Novo estoque de \"" + alvo.getBookName() +
-                "\": " + alvo.getQuantity());
+        Persistence.saveBooks(books);
+        System.out.println("✔ Novo estoque: " + alvo.getQuantity());
     }
 
     // ---------- helpers ----------
@@ -214,22 +218,21 @@ public class Main {
     private static void cadastrarUsuario() {
         System.out.print("Senha: ");
         String senha = sc.nextLine();
-
         System.out.print("Role (ADMIN/USER): ");
         String roleStr = sc.nextLine().trim().toUpperCase(Locale.ROOT);
-
         Role role;
         try {
             role = Role.valueOf(roleStr);
         } catch (IllegalArgumentException e) {
-            System.out.println("⚠ Role inválida. Use ADMIN ou USER.");
+            System.out.println("⚠ Role inválida.");
             return;
         }
-
         User u = new User(senha, role);
         users.add(u);
+        Persistence.saveUsers(users);   // 👈
         System.out.println("✔ Usuário criado com ID " + u.getUserId());
     }
+
 
     // ---------- 8. LISTAR USUÁRIOS ----------
     private static void listarUsuarios() {
@@ -240,55 +243,44 @@ public class Main {
         users.forEach(System.out::println);
     }
 
-    // ---------- 9. EMITIR LIVRO ----------
+    /// ---------- 9. EMITIR LIVRO ----------
     private static void emitirLivro() {
-        // 1) autentica admin
         User admin = login();
         if (admin == null || admin.getRole() != Role.ADMIN) {
-            System.out.println("⚠ Acesso negado. Apenas Admin pode emitir livros.");
+            System.out.println("⚠ Acesso negado.");
             return;
         }
-        System.out.println("✔ Login de Admin bem-sucedido. Bem-vindo, admin #" + admin.getUserId());
+        System.out.println("✔ Bem-vindo, admin #" + admin.getUserId());
 
-        // 2) identifica livro e usuário-alvo
-        System.out.print("ID do livro a emitir: ");
+        System.out.print("ID do livro: ");
         int bookId = lerInt();
         Book livro = buscarPorId(bookId);
-        if (livro == null) {
-            System.out.println("⚠ Livro com ID " + bookId + " não encontrado.");
-            return;
-        }
+        if (livro == null) { System.out.println("⚠ livro não encontrado."); return; }
 
-        System.out.print("ID do usuário que vai receber: ");
+        System.out.print("ID do usuário destinatário: ");
         int userId = lerInt();
         User leitor = buscarUsuarioPorId(userId);
-        if (leitor == null) {
-            System.out.println("⚠ Usuário com ID " + userId + " não encontrado.");
-            return;
-        }
+        if (leitor == null) { System.out.println("⚠ usuário não encontrado."); return; }
         if (leitor.getRole() == Role.ADMIN) {
-            System.out.println("⚠ Não é possível emitir para um Admin. Emita para um USER.");
-            return;
+            System.out.println("⚠ Emita para um USER."); return;
         }
 
-        // 3) RED FLAG 1: livro já emitido?
         for (IssueBook ib : issues) {
             if (ib.getBookId() == bookId) {
-                System.out.println("⚠ Este livro já está emitido (para userId=" +
-                        ib.getUserId() + ") e não pode ser reemitido.");
-                return;
+                System.out.println("⚠ já emitido para userId=" + ib.getUserId()); return;
             }
         }
-
-        // 4) RED FLAG 2: livro disponível?
         if (livro.getQuantity() <= 0) {
-            System.out.println("⚠ Livro indisponível no momento (estoque zerado).");
-            return;
+            System.out.println("⚠ estoque zerado."); return;
         }
 
-        // 5) efetiva o empréstimo
         livro.setQuantity(livro.getQuantity() - 1);
         issues.add(new IssueBook(bookId, userId));
+
+        // Persiste AMBOS: livro (estoque) e issue (novo empréstimo)
+        Persistence.saveBooks(books);      // 👈
+        Persistence.saveIssues(issues);    // 👈
+
         System.out.println("✔ Livro \"" + livro.getBookName() +
                 "\" emitido para userId=" + userId +
                 " | Estoque restante: " + livro.getQuantity());

@@ -1,6 +1,11 @@
 package org.example;
 
-public class IssueBook {
+import java.io.Serializable;
+
+public class IssueBook implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
     private final int bookId;
     private final int userId;
 
